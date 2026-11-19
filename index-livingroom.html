@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Quest Living Room — WebXR Starter</title>
+  <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.7.0/dist/aframe-extras.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-blink-controls@0.4.3/dist/aframe-blink-controls.min.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #120e0c; }
+    #enter-vr {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%);
+      z-index: 10;
+      font: 600 16px/1.2 system-ui, sans-serif;
+      letter-spacing: 0.02em;
+      color: #fff8f0;
+      background: #8b2e1f;
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 28px;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    }
+    #enter-vr:hover { background: #a83a28; }
+    #hint {
+      position: fixed;
+      left: 16px;
+      top: 16px;
+      z-index: 10;
+      max-width: 22rem;
+      color: #f3e6d8;
+      font: 13px/1.45 system-ui, sans-serif;
+      background: rgba(18,14,12,0.72);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    #hint strong { color: #fff; }
+  </style>
+  <script>
+    AFRAME.registerComponent('cinema-screen', {
+      schema: { video: { type: 'selector' } },
+      init: function () {
+        const video = this.data.video;
+        const tryPlay = function () {
+          if (!video) return;
+          const play = video.play();
+          if (play && play.catch) play.catch(function () {});
+        };
+        this.el.addEventListener('click', function () {
+          if (!video) return;
+          if (video.paused) tryPlay();
+          else video.pause();
+        });
+        this.el.sceneEl.addEventListener('enter-vr', tryPlay);
+        this.el.sceneEl.addEventListener('loaded', tryPlay);
+        const once = function () {
+          tryPlay();
+          document.removeEventListener('pointerdown', once);
+        };
+        document.addEventListener('pointerdown', once);
+      }
+    });
+  </script>
+</head>
+<body>
+  <div id="hint">
+    <strong>WebXR living room starter</strong><br>
+    Click the wall screen to play or pause (Big Buck Bunny, public domain).<br>
+    Desktop: drag to look, WASD to walk.<br>
+    Quest: Enter VR, left thumbstick forward to teleport, right trigger laser to click the screen.
+  </div>
+  <button id="enter-vr" type="button">Enter VR</button>
+
+  <a-scene
+    background="color: #2a211c"
+    renderer="antialias: true; colorManagement: true"
+    shadow="type: pcfsoft"
+    vr-mode-ui="enabled: true">
+
+    <a-assets>
+      <img id="woodFloor" src="https://cdn.aframe.io/a-painter/images/floor.jpg" crossorigin="anonymous">
+      <!-- Big Buck Bunny, Blender Institute / peach.blender.org — hosted on A-Frame's CORS-enabled CDN -->
+      <video
+        id="screenVideo"
+        src="https://cdn.aframe.io/videos/bunny.mp4"
+        preload="auto"
+        loop
+        playsinline
+        webkit-playsinline
+        muted
+        crossorigin="anonymous"></video>
+    </a-assets>
+
+    <!-- Lighting: warm living-room mood (kept simple so Quest and desktop both read clearly) -->
+    <a-entity light="type: ambient; color: #ffe8cc; intensity: 0.7"></a-entity>
+    <a-entity light="type: hemisphere; color: #fff1dc; groundColor: #6a4a38; intensity: 0.55"></a-entity>
+    <a-entity light="type: directional; color: #fff6e8; intensity: 0.45" position="1.2 4 2"></a-entity>
+    <a-entity light="type: point; color: #ffd7a8; intensity: 1.2; distance: 10; decay: 1" position="-2.85 1.55 -0.15"></a-entity>
+    <a-entity light="type: point; color: #ffd7a8; intensity: 1.2; distance: 10; decay: 1" position="2.85 1.55 -0.15"></a-entity>
+    <a-entity light="type: spot; color: #fff8ea; intensity: 0.85; angle: 46; penumbra: 0.5; distance: 9" position="0 2.7 -0.6" rotation="-42 0 0"></a-entity>
+
+    <!-- Room shell -->
+    <a-box id="floor" class="teleport"
+           position="0 0 0" width="8.2" height="0.08" depth="7.2"
+           material="src: #woodFloor; repeat: 4 4; color: #e6c49a; roughness: 0.85; metalness: 0"
+           shadow="receive: true"></a-box>
+    <a-box position="0 2.96 0" width="8.2" height="0.08" depth="7.2"
+           color="#5a4c44" material="roughness: 1"></a-box>
+    <a-box position="0 1.5 -3.6" width="8.2" height="3" depth="0.12"
+           color="#6d5d53" material="roughness: 1" shadow="receive: true"></a-box>
+    <a-box position="0 1.5 3.6" width="8.2" height="3" depth="0.12"
+           color="#6d5d53" material="roughness: 1"></a-box>
+    <a-box position="-4.06 1.5 0" width="0.12" height="3" depth="7.2"
+           color="#74655b" material="roughness: 1"></a-box>
+    <a-box position="4.06 1.5 0" width="0.12" height="3" depth="7.2"
+           color="#74655b" material="roughness: 1"></a-box>
+
+    <!-- Baseboards and ceiling trim -->
+    <a-box position="0 0.08 -3.52" width="8" height="0.12" depth="0.06" color="#1c1613"></a-box>
+    <a-box position="0 0.08 3.52" width="8" height="0.12" depth="0.06" color="#1c1613"></a-box>
+    <a-box position="-3.98 0.08 0" width="0.06" height="0.12" depth="7" color="#1c1613"></a-box>
+    <a-box position="3.98 0.08 0" width="0.06" height="0.12" depth="7" color="#1c1613"></a-box>
+
+    <!-- Rug -->
+    <a-box position="0 0.05 0.15" width="3.6" height="0.03" depth="2.8"
+           color="#6b2b22" material="roughness: 1"></a-box>
+    <a-box position="0 0.055 0.15" width="3.2" height="0.02" depth="2.4"
+           color="#4a211c" material="roughness: 1"></a-box>
+
+    <!-- Screen wall: bezel, glow, and video plane (Jellyfin placeholder) -->
+    <a-box position="0 1.75 -3.52" width="3.55" height="2.12" depth="0.08"
+           color="#0b0b0b"></a-box>
+    <a-box position="0 1.75 -3.54" width="3.7" height="2.26" depth="0.04"
+           color="#1a1a1a"></a-box>
+    <a-video
+      id="screen"
+      class="clickable"
+      src="#screenVideo"
+      width="3.38"
+      height="1.9"
+      position="0 1.75 -3.47"
+      cinema-screen="video: #screenVideo"></a-video>
+    <a-box position="0 0.28 -3.28" width="3.7" height="0.52" depth="0.45" color="#3a2a1f"></a-box>
+    <a-box position="0 0.55 -3.28" width="3.78" height="0.05" depth="0.52" color="#2c2118"></a-box>
+    <a-box position="-1.1 0.28 -3.08" width="0.7" height="0.38" depth="0.08" color="#1a1410"></a-box>
+    <a-box position="1.1 0.28 -3.08" width="0.7" height="0.38" depth="0.08" color="#1a1410"></a-box>
+    <a-box position="0 0.62 -3.49" width="3.55" height="0.22" depth="0.04" color="#1c1613"></a-box>
+    <a-text value="WALL SCREEN  ·  Jellyfin placeholder  ·  click or right-hand laser to play"
+            align="center" width="3.4" color="#e8d7c4"
+            position="0 0.62 -3.46"
+            font="kelsonsans"></a-text>
+
+    <!-- Curtains flanking the screen -->
+    <a-box position="-2.35 1.55 -3.5" width="0.9" height="2.7" depth="0.08"
+           color="#4a1f1a" material="roughness: 0.85"></a-box>
+    <a-box position="2.35 1.55 -3.5" width="0.9" height="2.7" depth="0.08"
+           color="#4a1f1a" material="roughness: 0.85"></a-box>
+    <a-box position="-2.15 1.55 -3.45" width="0.35" height="2.7" depth="0.1"
+           color="#5c2720"></a-box>
+    <a-box position="2.15 1.55 -3.45" width="0.35" height="2.7" depth="0.1"
+           color="#5c2720"></a-box>
+    <a-box position="0 2.92 -3.48" width="5.7" height="0.1" depth="0.16" color="#2b211c"></a-box>
+
+    <!-- Couch (behind the starting view, facing the screen) -->
+    <a-entity position="0 0 2.15" rotation="0 0 0">
+      <a-box position="0 0.32 0.08" width="2.5" height="0.36" depth="0.95" color="#6e3a2c" shadow="cast: true"></a-box>
+      <a-box position="0 0.72 0.42" width="2.5" height="0.7" depth="0.22" color="#5b3025" shadow="cast: true"></a-box>
+      <a-box position="-1.32 0.5 0.05" width="0.22" height="0.7" depth="1.05" color="#5b3025"></a-box>
+      <a-box position="1.32 0.5 0.05" width="0.22" height="0.7" depth="1.05" color="#5b3025"></a-box>
+      <a-box position="-0.55 0.54 -0.12" width="0.95" height="0.14" depth="0.62" color="#8a4d3c"></a-box>
+      <a-box position="0.55 0.54 -0.12" width="0.95" height="0.14" depth="0.62" color="#8a4d3c"></a-box>
+      <a-box position="-0.7 0.82 0.28" width="0.42" height="0.32" depth="0.14" rotation="-8 0 0" color="#c9b29a"></a-box>
+      <a-box position="0.7 0.82 0.28" width="0.42" height="0.32" depth="0.14" rotation="-8 0 0" color="#c9b29a"></a-box>
+    </a-entity>
+
+    <!-- Coffee table -->
+    <a-box position="0 0.38 0.35" width="1.35" height="0.06" depth="0.7" color="#6a4a32" shadow="cast: true"></a-box>
+    <a-box position="-0.55 0.2 0.1" width="0.08" height="0.36" depth="0.08" color="#211810"></a-box>
+    <a-box position="0.55 0.2 0.1" width="0.08" height="0.36" depth="0.08" color="#211810"></a-box>
+    <a-box position="-0.55 0.2 0.6" width="0.08" height="0.36" depth="0.08" color="#211810"></a-box>
+    <a-box position="0.55 0.2 0.6" width="0.08" height="0.36" depth="0.08" color="#211810"></a-box>
+    <!-- remote / book stand-ins -->
+    <a-box position="0.25 0.43 0.4" width="0.22" height="0.03" depth="0.12" color="#1a1a1a"></a-box>
+    <a-box position="-0.28 0.43 0.28" width="0.28" height="0.04" depth="0.2" color="#8b5a2b"></a-box>
+
+    <!-- Side tables + lamps -->
+    <a-box position="-2.85 0.28 -0.15" width="0.5" height="0.5" depth="0.5" color="#2c2118"></a-box>
+    <a-cylinder position="-2.85 0.7 -0.15" radius="0.04" height="0.35" color="#c9a36a"></a-cylinder>
+    <a-cone position="-2.85 1.05 -0.15" radius-bottom="0.2" radius-top="0.08" height="0.28" color="#f0d9b5" material="emissive: #ffd19a; emissiveIntensity: 0.35"></a-cone>
+    <a-sphere position="-2.85 0.88 -0.15" radius="0.05" color="#fff3d6" material="emissive: #ffe7b8; emissiveIntensity: 0.8"></a-sphere>
+
+    <a-box position="2.85 0.28 -0.15" width="0.5" height="0.5" depth="0.5" color="#2c2118"></a-box>
+    <a-cylinder position="2.85 0.7 -0.15" radius="0.04" height="0.35" color="#c9a36a"></a-cylinder>
+    <a-cone position="2.85 1.05 -0.15" radius-bottom="0.2" radius-top="0.08" height="0.28" color="#f0d9b5" material="emissive: #ffd19a; emissiveIntensity: 0.35"></a-cone>
+    <a-sphere position="2.85 0.88 -0.15" radius="0.05" color="#fff3d6" material="emissive: #ffe7b8; emissiveIntensity: 0.8"></a-sphere>
+
+    <!-- Side shelves / frames -->
+    <a-box position="-3.95 1.5 -1.2" width="0.06" height="0.7" depth="0.95" color="#d7c4a3"></a-box>
+    <a-box position="-3.94 1.5 -1.2" width="0.02" height="0.58" depth="0.82" color="#6d7f8c"></a-box>
+    <a-box position="-3.95 1.35 1.4" width="0.08" height="1.2" depth="0.7" color="#2c2118"></a-box>
+    <a-box position="-3.88 1.7 1.4" width="0.22" height="0.04" depth="0.58" color="#3a2c22"></a-box>
+    <a-box position="-3.88 1.3 1.4" width="0.22" height="0.04" depth="0.58" color="#3a2c22"></a-box>
+    <a-box position="-3.88 0.95 1.25" width="0.12" height="0.18" depth="0.12" color="#7a3e2b"></a-box>
+    <a-box position="-3.88 1.85 1.5" width="0.1" height="0.16" depth="0.1" color="#cfc3a8"></a-box>
+
+    <a-box position="3.95 1.55 -0.9" width="0.06" height="0.8" depth="1.1" color="#d7c4a3"></a-box>
+    <a-box position="3.94 1.55 -0.9" width="0.02" height="0.66" depth="0.96" color="#8a6a4a"></a-box>
+
+    <!-- Corner plant -->
+    <a-cylinder position="3.35 0.2 3.05" radius="0.16" height="0.32" color="#6b3a28"></a-cylinder>
+    <a-sphere position="3.35 0.62 3.05" radius="0.28" color="#2f5b34"></a-sphere>
+    <a-sphere position="3.18 0.78 2.95" radius="0.16" color="#3a6d3c"></a-sphere>
+    <a-sphere position="3.5 0.8 3.15" radius="0.14" color="#274e2b"></a-sphere>
+
+    <a-cylinder position="-3.35 0.2 3.05" radius="0.16" height="0.32" color="#6b3a28"></a-cylinder>
+    <a-sphere position="-3.35 0.62 3.05" radius="0.28" color="#2f5b34"></a-sphere>
+    <a-sphere position="-3.18 0.78 2.95" radius="0.16" color="#3a6d3c"></a-sphere>
+    <a-sphere position="-3.5 0.8 3.15" radius="0.14" color="#274e2b"></a-sphere>
+
+    <!-- Ceiling fixtures -->
+    <a-cylinder position="0 2.92 -1.3" radius="0.18" height="0.05" color="#e8d7b8" material="emissive: #ffe7b8; emissiveIntensity: 0.4"></a-cylinder>
+    <a-cylinder position="-1.8 2.92 1.3" radius="0.12" height="0.04" color="#e8d7b8" material="emissive: #ffe7b8; emissiveIntensity: 0.3"></a-cylinder>
+    <a-cylinder position="1.8 2.92 1.3" radius="0.12" height="0.04" color="#e8d7b8" material="emissive: #ffe7b8; emissiveIntensity: 0.3"></a-cylinder>
+
+    <!-- Player rig: keyboard walk on desktop, Quest teleport + lasers -->
+    <a-entity id="rig" movement-controls="controls: keyboard; speed: 0.2" position="0 0 1.45">
+      <a-entity id="head" camera look-controls="reverseMouseDrag: false" position="0 1.35 0" rotation="-8 0 0"></a-entity>
+      <a-entity
+        id="leftHand"
+        laser-controls="hand: left"
+        raycaster="objects: .clickable; far: 6; lineColor: #f0c48a; lineOpacity: 0.55"
+        blink-controls="cameraRig: #rig; teleportOrigin: #head; collisionEntities: .teleport; rotateOnTeleport: true; snapTurn: true"></a-entity>
+      <a-entity
+        id="rightHand"
+        laser-controls="hand: right"
+        raycaster="objects: .clickable; far: 6; lineColor: #f0c48a; lineOpacity: 0.55"></a-entity>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    document.getElementById('enter-vr').addEventListener('click', function () {
+      const scene = document.querySelector('a-scene');
+      if (scene && scene.enterVR) scene.enterVR();
+    });
+    document.querySelector('a-scene').addEventListener('enter-vr', function () {
+      document.getElementById('enter-vr').style.display = 'none';
+      document.getElementById('hint').style.display = 'none';
+    });
+    document.querySelector('a-scene').addEventListener('exit-vr', function () {
+      document.getElementById('enter-vr').style.display = '';
+      document.getElementById('hint').style.display = '';
+    });
+  </script>
+</body>
+</html>
