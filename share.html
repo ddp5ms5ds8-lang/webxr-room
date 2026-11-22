@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="data:,">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Share laptop screen — Cliff studio</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body {
+      margin: 0; min-height: 100%;
+      background: #0b0d14;
+      color: #e8eefc;
+      font: 18px/1.45 system-ui, sans-serif;
+    }
+    main {
+      max-width: 34rem;
+      margin: 0 auto;
+      padding: 2.4rem 1.4rem 3rem;
+    }
+    h1 { font-size: 1.7rem; margin: 0 0 0.4rem; }
+    .lede { color: #9aa6bd; margin: 0 0 1.6rem; }
+    label { display: block; font-weight: 600; margin-bottom: 0.4rem; }
+    #code {
+      width: 100%;
+      box-sizing: border-box;
+      font: 700 2rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      text-align: center;
+      padding: 0.7rem 0.6rem;
+      border: 1px solid #3a4258;
+      border-radius: 12px;
+      background: #161923;
+      color: #fff;
+      outline: none;
+    }
+    #code:focus { border-color: #6b8cff; }
+    .row { margin: 1.1rem 0; }
+    .check { display: flex; gap: 0.6rem; align-items: flex-start; color: #c5cde0; font-weight: 500; }
+    .check input { width: 1.15rem; height: 1.15rem; margin-top: 0.2rem; }
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 999px;
+      padding: 1rem 1.2rem;
+      font: 700 1.15rem/1.2 system-ui, sans-serif;
+      cursor: pointer;
+    }
+    #share {
+      background: #3a5ccc;
+      color: #fff;
+      margin-top: 0.4rem;
+    }
+    #share:hover { background: #4c6ee0; }
+    #share:disabled { background: #2a3144; color: #8b95ad; cursor: default; }
+    #stop {
+      display: none;
+      background: #8a2b3a;
+      color: #fff;
+      margin-top: 0.7rem;
+    }
+    #stop:hover { background: #a33546; }
+    #status {
+      margin-top: 1.2rem;
+      padding: 0.85rem 1rem;
+      border-radius: 12px;
+      background: #161923;
+      border: 1px solid #2a3144;
+      color: #c5cde0;
+    }
+    #status[data-state="sharing"] { border-color: #2f7a4a; background: #102016; color: #c8f0d4; }
+    #status[data-state="error"] { border-color: #8a2b3a; background: #1a1012; color: #f3c4ca; }
+    #status[data-state="connecting"] { border-color: #6b8cff; }
+    ol { padding-left: 1.2rem; color: #9aa6bd; }
+    a { color: #9ec0ff; }
+    .preview {
+      margin-top: 1rem;
+      width: 100%;
+      max-height: 12rem;
+      background: #000;
+      border-radius: 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Share my screen</h1>
+    <p class="lede">This sends your Windows laptop screen into the laptop panel in the Quest room. Type the short code shown on that panel, then pick a screen or window.</p>
+
+    <div class="row">
+      <label for="code">Code from the headset</label>
+      <input id="code" name="code" maxlength="20" autocomplete="off" spellcheck="false" placeholder="•••••" autofocus>
+    </div>
+
+    <label class="check">
+      <input type="checkbox" id="audio">
+      <span>Also share system audio (Chrome or Edge on Windows; use “Share tab audio” or “Share system audio” in the picker if you see it)</span>
+    </label>
+
+    <button id="share" type="button">Share my screen</button>
+    <button id="stop" type="button">Stop sharing</button>
+    <video id="preview" class="preview" muted autoplay playsinline></video>
+    <div id="status" data-state="idle">Waiting for the code from your headset.</div>
+
+    <ol>
+      <li>On the Quest, open the room and read the short code on the laptop (or on the corner card before you enter VR).</li>
+      <li>Type that code here, click <strong>Share my screen</strong>, and pick a window or the whole screen.</li>
+      <li>Leave this tab open and keep the laptop awake. To stop, click Stop sharing or close this tab.</li>
+    </ol>
+    <p class="lede">Room: <a href="./">webxr-room</a>. Same Wi-Fi as the headset works best.</p>
+  </main>
+  <script src="mirror-common.js"></script>
+  <script>
+    (function () {
+      const statusEl = document.getElementById('status');
+      const codeEl = document.getElementById('code');
+      const shareBtn = document.getElementById('share');
+      const stopBtn = document.getElementById('stop');
+      const audioEl = document.getElementById('audio');
+      const preview = document.getElementById('preview');
+      const FAKE = new URLSearchParams(location.search).get('fake') === '1';
+
+      let peer, call, localStream;
+
+      function setStatus(state, text) {
+        statusEl.dataset.state = state;
+        statusEl.textContent = text;
+      }
+
+      function stopTracks() {
+        if (localStream) {
+          localStream.getTracks().forEach(function (t) { t.stop(); });
+          if (localStream.__stopPattern) localStream.__stopPattern();
+          localStream = null;
+        }
+        if (preview.srcObject) preview.srcObject = null;
+        preview.style.display = 'none';
+      }
+
+      function resetPeer() {
+        if (call) { try { call.close(); } catch (e) {} call = null; }
+        if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+      }
+
+      function stopSharing(message) {
+        stopTracks();
+        resetPeer();
+        shareBtn.disabled = false;
+        stopBtn.style.display = 'none';
+        setStatus('idle', message || 'Sharing stopped. You can share again with the same code.');
+      }
+
+      async function getStream() {
+        if (FAKE || window.__FORCE_FAKE) {
+          return EVAN_MIRROR.makeTestPatternStream();
+        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+          throw new Error('This browser cannot share a screen. Use Chrome or Edge on your Windows laptop.');
+        }
+        const opts = {
+          video: { frameRate: { ideal: 30, max: 30 }, width: { max: 1920 }, height: { max: 1080 } },
+          audio: !!audioEl.checked
+        };
+        return navigator.mediaDevices.getDisplayMedia(opts);
+      }
+
+      async function startShare() {
+        const parsed = EVAN_MIRROR.parseCode(codeEl.value);
+        if (!parsed) {
+          setStatus('error', 'Enter the 5-character code shown on the laptop in the headset.');
+          codeEl.focus();
+          return;
+        }
+        shareBtn.disabled = true;
+        setStatus('connecting', 'Connecting to the room…');
+        try {
+          localStream = await getStream();
+        } catch (err) {
+          shareBtn.disabled = false;
+          if (err && err.name === 'NotAllowedError') {
+            setStatus('error', 'Screen share was cancelled. Click Share my screen to try again.');
+          } else {
+            setStatus('error', (err && err.message) || 'Could not capture the screen.');
+          }
+          return;
+        }
+
+        localStream.getVideoTracks().forEach(function (t) {
+          t.addEventListener('ended', function () { stopSharing('You stopped the screen picker. Share again when you want to.'); });
+        });
+        preview.srcObject = localStream;
+        preview.style.display = 'block';
+
+        try {
+          await EVAN_MIRROR.loadPeerJs();
+          resetPeer();
+          peer = new Peer(EVAN_MIRROR.peerOptions());
+        } catch (err) {
+          stopTracks();
+          shareBtn.disabled = false;
+          setStatus('error', 'Could not load the connection library. Check your internet and try again.');
+          return;
+        }
+
+        const failTimer = setTimeout(function () {
+          if (!call || !call.open) {
+            setStatus('error', 'Still trying… if this hangs, put the laptop and the Quest on the same Wi-Fi and try again. A strict network can block this without a TURN server.');
+          }
+        }, 12000);
+
+        function onOpen() {
+          setStatus('connecting', 'Code accepted. Sending your screen…');
+          call = peer.call(parsed.peerId, localStream, { metadata: { type: 'display' } });
+          if (!call) {
+            clearTimeout(failTimer);
+            stopSharing('Could not start the call. Check the code and make sure the room is still open.');
+            return;
+          }
+          call.on('stream', function () {
+            /* Some PeerJS versions fire this if the room answers with a stream; we do not need it. */
+          });
+          call.on('error', function (err) {
+            clearTimeout(failTimer);
+            setStatus('error', 'Connection error: ' + (err && err.message ? err.message : 'call failed') + '. Check the code, keep the room open, and try again.');
+          });
+          // MediaConnection becomes 'open' once connected.
+          const markLive = function () {
+            clearTimeout(failTimer);
+            stopBtn.style.display = 'block';
+            setStatus('sharing', 'Sharing with the headset. Leave this tab open and keep the laptop awake.');
+          };
+          call.on('open', markLive);
+          // Fallback: if the room answers, tracks should start flowing shortly.
+          setTimeout(function () {
+            if (call && (call.open || (call.peerConnection && call.peerConnection.iceConnectionState === 'connected'))) {
+              markLive();
+            }
+          }, 1500);
+          call.on('close', function () {
+            clearTimeout(failTimer);
+            stopSharing('The headset disconnected. Open the room and share again if you want to continue.');
+          });
+        }
+
+        peer.on('open', onOpen);
+        peer.on('error', function (err) {
+          clearTimeout(failTimer);
+          const type = err && err.type;
+          if (type === 'peer-unavailable') {
+            stopTracks();
+            resetPeer();
+            shareBtn.disabled = false;
+            stopBtn.style.display = 'none';
+            setStatus('error', 'No room is waiting with that code. Open the room in the Quest browser, read the new code, and try again.');
+          } else {
+            setStatus('error', 'Connection error' + (type ? ' (' + type + ')' : '') + '. Same Wi-Fi works best. You can try sharing again.');
+          }
+        });
+        peer.on('disconnected', function () {
+          setStatus('error', 'Lost the signaling server. Click Share my screen to try again.');
+        });
+      }
+
+      shareBtn.addEventListener('click', startShare);
+      stopBtn.addEventListener('click', function () { stopSharing(); });
+      codeEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') startShare();
+      });
+
+      const pre = EVAN_MIRROR.queryCode();
+      if (pre) codeEl.value = pre.code;
+
+      // Headless test hook: skip the picker and start a test-pattern stream.
+      window.__startFakeShare = function (code) {
+        if (code) codeEl.value = code;
+        window.__FORCE_FAKE = true;
+        return startShare();
+      };
+
+      if (FAKE && pre) {
+        // Still need a user-gesture in real browsers; tests can call __startFakeShare.
+        setStatus('idle', 'Test mode is ready. The test runner will start the pattern stream.');
+      }
+    })();
+  </script>
+</body>
+</html>

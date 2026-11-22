@@ -3,10 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <link rel="icon" href="data:,">
   <title>Quest Video Gallery — Cliff Studio</title>
   <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.7.0/dist/aframe-extras.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-blink-controls@0.4.3/dist/aframe-blink-controls.min.js"></script>
+  <script src="mirror-common.js"></script>
   <style>
     html, body { margin: 0; height: 100%; background: #000; }
     #enter-vr {
@@ -382,27 +384,231 @@
         }
       });
 
-      AFRAME.registerComponent('laptop-canvas', {
+      AFRAME.registerComponent('laptop-mirror', {
         init: function () {
-          const c = document.createElement('canvas');
-          c.width = 1024;
-          c.height = 640;
-          const ctx = c.getContext('2d');
+          this.baseWidth = 0.39;
+          this.baseHeight = 0.23;
+          this.enlarged = false;
+          this.status = 'starting';
+          this.code = '';
+          this.peer = null;
+          this.call = null;
+          this.canvas = document.createElement('canvas');
+          this.canvas.width = 1024;
+          this.canvas.height = 640;
+          this.video = document.getElementById('laptopVideo');
+          this._onClick = this._onClick.bind(this);
+          this._tryPlay = this._tryPlay.bind(this);
+          this.el.addEventListener('click', this._onClick);
+          this.el.sceneEl.addEventListener('enter-vr', this._tryPlay);
+          this._draw('Starting…', '', 'The pairing code will show up here.');
+          this._useCanvas();
+          this._start();
+        },
+        remove: function () {
+          this.el.removeEventListener('click', this._onClick);
+          this.el.sceneEl.removeEventListener('enter-vr', this._tryPlay);
+          if (this.call) { try { this.call.close(); } catch (e) {} }
+          if (this.peer) { try { this.peer.destroy(); } catch (e) {} }
+        },
+        _useCanvas: function () {
+          this.el.setAttribute('width', this.baseWidth);
+          this.el.setAttribute('height', this.baseHeight);
+          this.el.setAttribute('material', { shader: 'flat', src: this.canvas, npot: true });
+        },
+        _draw: function (title, code, footer) {
+          const ctx = this.canvas.getContext('2d');
           ctx.fillStyle = '#07080d';
           ctx.fillRect(0, 0, 1024, 640);
           ctx.fillStyle = '#10131b';
-          ctx.fillRect(40, 40, 944, 560);
+          ctx.fillRect(36, 36, 952, 568);
           ctx.fillStyle = '#2a3348';
-          ctx.fillRect(40, 40, 944, 4);
-          ctx.font = '600 56px system-ui, sans-serif';
-          ctx.fillStyle = '#e8eefc';
+          ctx.fillRect(36, 36, 952, 4);
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('Laptop screen', 512, 292);
-          ctx.font = '400 30px system-ui, sans-serif';
           ctx.fillStyle = '#8b95ad';
-          ctx.fillText('mirroring coming soon', 512, 360);
-          this.el.setAttribute('material', { shader: 'flat', src: c, npot: true });
+          ctx.font = '500 32px system-ui, sans-serif';
+          ctx.fillText(title, 512, 140);
+          if (code) {
+            ctx.fillStyle = '#e8eefc';
+            ctx.font = '700 140px ui-monospace, SFMono-Regular, Menlo, monospace';
+            ctx.fillText(code, 512, 310);
+          }
+          ctx.fillStyle = '#c5cde0';
+          ctx.font = '400 30px system-ui, sans-serif';
+          const lines = String(footer || '').split('\n');
+          lines.forEach((line, i) => ctx.fillText(line, 512, 470 + i * 40));
+          const mat = this.el.getObject3D('mesh') && this.el.getObject3D('mesh').material;
+          if (mat && mat.map) mat.map.needsUpdate = true;
+        },
+        _setHint: function (code, extra) {
+          const hint = document.getElementById('hint-code');
+          if (!hint) return;
+          hint.textContent = code
+            ? ('Laptop code: ' + code + (extra ? ' — ' + extra : ' — type it on share.html on your laptop.'))
+            : (extra || '');
+        },
+        _publish: function () {
+          const pc = this.call && this.call.peerConnection;
+          window.__mirror = {
+            code: this.code,
+            status: this.status,
+            video: this.video,
+            receiving: this.status === 'live',
+            ice: pc ? pc.iceConnectionState : '',
+            connection: pc ? pc.connectionState : ''
+          };
+        },
+        _start: async function () {
+          const forced = EVAN_MIRROR.queryCode();
+          this.status = 'connecting';
+          this._publish();
+          this._draw('Connecting…', forced ? forced.code : '', 'Getting a pairing code.');
+          try {
+            await EVAN_MIRROR.loadPeerJs();
+          } catch (e) {
+            this.status = 'error';
+            this._draw('Could not load PeerJS', '', 'Check the internet connection and reload.');
+            this._setHint('', 'Laptop mirroring is offline (could not load PeerJS).');
+            this._publish();
+            return;
+          }
+          this._listen(forced ? forced.code : EVAN_MIRROR.makeCode());
+        },
+        _listen: function (code) {
+          const self = this;
+          if (this.peer) { try { this.peer.destroy(); } catch (e) {} this.peer = null; }
+          this.code = code;
+          const peerId = EVAN_MIRROR.PREFIX + code;
+          const peer = new Peer(peerId, EVAN_MIRROR.peerOptions());
+          this.peer = peer;
+          this.status = 'waiting';
+          this._draw('Type this code on your laptop', code, 'Open share.html  ·  then Share my screen');
+          this._setHint(code);
+          this._publish();
+
+          peer.on('open', function () {
+            self.status = 'waiting';
+            self._draw('Type this code on your laptop', self.code, 'Open share.html  ·  then Share my screen');
+            self._setHint(self.code);
+            self._publish();
+          });
+          peer.on('call', function (call) { self._answer(call); });
+          peer.on('error', function (err) {
+            const type = err && err.type;
+            if (type === 'unavailable-id') {
+              self._listen(EVAN_MIRROR.makeCode());
+              return;
+            }
+            self.status = 'error';
+            self._draw('Connection error', self.code, type ? String(type) : 'Try reloading the room.');
+            self._setHint(self.code, 'connection error' + (type ? ' (' + type + ')' : ''));
+            self._publish();
+          });
+          peer.on('disconnected', function () {
+            if (self.status === 'live') return;
+            try { peer.reconnect(); } catch (e) {}
+          });
+        },
+        _answer: function (call) {
+          const self = this;
+          if (this.call && this.call !== call) {
+            try { this.call.close(); } catch (e) {}
+          }
+          this.call = call;
+          this.status = 'connecting';
+          this._draw('Connecting…', this.code, 'Laptop is calling the room.');
+          this._publish();
+          call.answer();
+          call.on('stream', function (stream) { self._attach(stream); });
+          call.on('close', function () { if (self.call === call) self._detach(); });
+          call.on('error', function () { if (self.call === call) self._detach(); });
+        },
+        _attach: function (stream) {
+          const self = this;
+          const video = this.video;
+          if (video.srcObject && video.srcObject !== stream) {
+            video.srcObject.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
+          }
+          video.muted = true;
+          video.playsInline = true;
+          video.autoplay = true;
+          video.setAttribute('playsinline', '');
+          video.setAttribute('webkit-playsinline', '');
+          video.srcObject = stream;
+          const play = video.play();
+          if (play && play.catch) play.catch(function () {});
+          const onMeta = function () {
+            const aspect = (video.videoWidth && video.videoHeight)
+              ? (video.videoWidth / video.videoHeight)
+              : (16 / 9);
+            let w = self.baseWidth;
+            let h = w / aspect;
+            if (h > self.baseHeight) { h = self.baseHeight; w = h * aspect; }
+            self.el.setAttribute('width', w);
+            self.el.setAttribute('height', h);
+            self.el.setAttribute('material', { shader: 'flat', src: '#laptopVideo', npot: true });
+            self.status = 'live';
+            self._setHint(self.code, 'mirroring. Laser trigger on the panel enlarges it.');
+            self._publish();
+            self._tryPlay();
+          };
+          let applied = false;
+          const apply = function () {
+            if (applied) return;
+            if (!(video.videoWidth > 0 || video.readyState >= 2)) return;
+            applied = true;
+            if (self._iceTimer) { clearTimeout(self._iceTimer); self._iceTimer = null; }
+            onMeta();
+          };
+          video.addEventListener('loadedmetadata', apply);
+          video.addEventListener('loadeddata', apply);
+          video.addEventListener('playing', apply);
+          stream.getVideoTracks().forEach(function (t) {
+            t.addEventListener('unmute', apply);
+            t.addEventListener('ended', function () { self._detach(); });
+          });
+          if (video.readyState >= 1 && video.videoWidth) apply();
+
+          const pc = self.call && self.call.peerConnection;
+          if (pc) {
+            pc.addEventListener('iceconnectionstatechange', function () { self._publish(); });
+          }
+          if (self._iceTimer) clearTimeout(self._iceTimer);
+          self._iceTimer = setTimeout(function () {
+            if (self.status === 'live') return;
+            self._draw('Still connecting…', self.code, 'Same Wi-Fi works best. A strict network may block this without TURN.');
+            self._setHint(self.code, 'still connecting — same Wi-Fi works best.');
+            self._publish();
+          }, 12000);
+        },
+        _detach: function () {
+          if (this._iceTimer) { clearTimeout(this._iceTimer); this._iceTimer = null; }
+          const video = this.video;
+          if (video && video.srcObject) {
+            video.srcObject = null;
+          }
+          this.call = null;
+          this.status = 'waiting';
+          this._useCanvas();
+          this._draw('Disconnected', this.code, 'Share again from the laptop with this code.');
+          this._setHint(this.code, 'disconnected — share again from the laptop.');
+          this._publish();
+        },
+        _tryPlay: function () {
+          const video = this.video;
+          if (!video || !video.srcObject) return;
+          const play = video.play();
+          if (play && play.catch) play.catch(function () {});
+          if (video.srcObject.getAudioTracks && video.srcObject.getAudioTracks().length) {
+            video.muted = false;
+          }
+        },
+        _onClick: function () {
+          this._tryPlay();
+          this.enlarged = !this.enlarged;
+          const laptop = this.el.closest('#laptop') || document.getElementById('laptop');
+          if (laptop) laptop.setAttribute('scale', this.enlarged ? '2.1 2.1 2.1' : '1 1 1');
         }
       });
 
@@ -527,11 +733,14 @@
 <body>
   <div id="hint">
     <strong>Cliff studio</strong><br>
-    Two overhead screens above a glass desk, with a starfield drop beyond the edge. A laptop on the desk can be grabbed and moved.<br>
+    Two overhead screens above a glass desk, with a starfield drop beyond the edge. A laptop on the desk can be grabbed and moved, and can mirror your Windows laptop.<br>
+    <span id="hint-code">Laptop code will appear here.</span><br>
     Desktop: drag to look, WASD to walk.<br>
-    Quest: Enter VR, left thumbstick forward to teleport (desk or fire). Right-hand laser + trigger plays or pauses a screen. Point at the laptop and squeeze either grip, move it, then let go to leave it floating.
+    Quest: Enter VR, left thumbstick forward to teleport (desk or fire). Right-hand laser + trigger plays or pauses a screen, or enlarges the laptop. Point at the laptop and squeeze either grip, move it, then let go to leave it floating.
   </div>
   <button id="enter-vr" type="button">Enter VR</button>
+  <video id="laptopVideo" autoplay muted playsinline webkit-playsinline preload="none"
+         style="position:fixed;left:-9999px;width:4px;height:4px;opacity:0"></video>
 
   <a-scene
     background="color: #000000"
@@ -625,7 +834,7 @@
                cinema-screen="video: #videoSecond"></a-video>
     </a-entity>
 
-    <!-- Slim open laptop on the desk. Grip to grab and move; future mirror target. -->
+    <!-- Slim open laptop on the desk. Grip to grab and move; WebRTC mirror target. -->
     <a-entity id="laptop" class="grabbable"
               position="0 0.755 -2.96"
               grip-move="persistKey: webxr-laptop-pose">
@@ -634,8 +843,8 @@
       <a-entity position="0 0.012 -0.02" rotation="-16 0 0">
         <a-box class="grabbable" position="0 0.13 -0.006" width="0.42" height="0.26" depth="0.01"
                color="#121318"></a-box>
-        <a-plane class="grabbable" position="0 0.13 0.0008" width="0.39" height="0.23"
-                 laptop-canvas></a-plane>
+        <a-plane class="grabbable clickable" position="0 0.13 0.0008" width="0.39" height="0.23"
+                 laptop-mirror></a-plane>
       </a-entity>
     </a-entity>
 

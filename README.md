@@ -10,20 +10,20 @@ The current `index.html` is a dark rock cliff in a pitch-black starfield. You st
 - A low-poly dark rock plateau with a jagged front edge. Beyond the drop is an outer-space void: stars in every direction (including below), a denser star field ahead of the cliff, and a faint nebula glow. A low rock lip marks the edge, and teleport is limited to the plateau so you cannot step off.
 - A tidy frosted-glass desk with slim legs, right at the cliff edge. Labels on the front edge of the desk read `MAIN · Jellyfin later` and `SCREEN 2 · Jellyfin later`.
 - Two 16:9 video screens mounted on a slim dual-monitor arm above the desk, at about eye level and angled slightly inward. Click or use the right-hand laser + trigger to play or pause each one. These are the future Jellyfin slots.
-- A slim laptop on the desk (placeholder: "Laptop screen, mirroring coming soon"). This is the future target for laptop screen mirroring.
+- A slim laptop on the desk that can mirror your Windows laptop screen over WebRTC (PeerJS). It shows a short pairing code until you share, then the live screen. Laser trigger on the panel toggles a larger size.
 - A small campfire about 9 m to the right of the desk, still on the plateau and away from the edge: a ring of stones, a couple of logs, a seat log, small flickering flames, and a short-range warm light. You can teleport to it.
 - Built to stay light on Quest 3: a static point star field (no aurora or Milky Way shaders), no large textures, no particle systems, `antialias` off, and video `preload="metadata"`.
 
 ## Grabbing the laptop
 
-On the Quest, point either hand's laser at the laptop and squeeze the **grip** button (the side squeeze, not the trigger). Move and rotate it freely; let go of the grip to leave it floating wherever you placed it. The pose is saved in `localStorage`, so it stays put if you reload the page. The trigger is still only for play/pause on the two video screens.
+On the Quest, point either hand's laser at the laptop and squeeze the **grip** button (the side squeeze, not the trigger). Move and rotate it freely; let go of the grip to leave it floating wherever you placed it. The pose is saved in `localStorage`, so it stays put if you reload the page. The trigger plays or pauses the two video screens, and on the laptop panel it also toggles a larger size (and starts playback if the mirrored stream was waiting on a tap).
 
 ## Controls recap
 
 | Where | Look | Move | Screens | Laptop |
 | --- | --- | --- | --- | --- |
-| Desktop | mouse drag | WASD (stays on the cliff) | click a screen | — |
-| Quest 3 | head tracking | left thumbstick forward = teleport (desk or fire, not off the edge) | right laser + trigger | laser + **grip** to grab, release to drop |
+| Desktop | mouse drag | WASD (stays on the cliff) | click a screen | click the laptop to enlarge |
+| Quest 3 | head tracking | left thumbstick forward = teleport (desk or fire, not off the edge) | right laser + trigger | laser + **grip** to grab; laser + **trigger** to enlarge |
 
 ## Try it on a computer first
 
@@ -58,7 +58,27 @@ Swap the `src` on `<video id="videoMain">` and/or `<video id="videoSecond">` for
 
 None of that is set up in this starter. The screens are wired so you can change the `src` once those pieces exist.
 
-Laptop mirroring into the grabbable panel is a separate step. It is not built in yet.
+## Mirror your Windows laptop onto the desk laptop
+
+The headset shows a short code and listens. You type that code on the laptop — no typing in VR.
+
+**On the Quest**
+
+1. Open [the room](https://ddp5ms5ds8-lang.github.io/webxr-room/) in the Meta Quest Browser.
+2. Read the 5-character code on the laptop screen (it is also on the corner card before you tap Enter VR).
+3. Tap **Enter VR**. Leave the room open.
+
+**On the Windows laptop (Chrome or Edge)**
+
+1. Open [the share page](https://ddp5ms5ds8-lang.github.io/webxr-room/share.html).
+2. Type the code from the headset. Optional: tick **Also share system audio** if you want tab or system sound (Chrome or Edge will offer it in the picker when they can).
+3. Click **Share my screen** and pick a window or the whole screen.
+4. Leave that tab open and keep the laptop awake. Click **Stop sharing** or close the tab to end it.
+
+You can also add `?code=ABCDE` or `?peer=ABCDE` to the share page URL once you know the code. If the stream is paused on the headset, point at the laptop and pull the trigger, or enter VR — that user gesture starts playback. The same trigger toggles a larger panel.
+
+**Limits.** Same Wi-Fi as the headset works best. Signaling uses the free public PeerJS broker; media goes peer-to-peer with Google STUN only (no TURN server). A strict network, guest Wi-Fi, or a laptop and headset on different networks may fail to connect. There can be a fraction of a second to a few hundred milliseconds of lag. The laptop must stay awake, and closing the share tab stops the picture. The broker is shared and best-effort. If you reload the room, it may get a new code; read it again and share from the laptop once more.
+
 
 ## Examples to open on the Quest 3 Browser
 
