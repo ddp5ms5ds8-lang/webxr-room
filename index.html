@@ -569,6 +569,17 @@
             t.addEventListener('ended', function () { self._detach(); });
           });
           if (video.readyState >= 1 && video.videoWidth) apply();
+          if (self._metaPoll) clearInterval(self._metaPoll);
+          let tries = 0;
+          self._metaPoll = setInterval(function () {
+            tries += 1;
+            self._tryPlay();
+            apply();
+            if (applied || tries > 40) {
+              clearInterval(self._metaPoll);
+              self._metaPoll = null;
+            }
+          }, 250);
 
           const pc = self.call && self.call.peerConnection;
           if (pc) {
@@ -584,6 +595,7 @@
         },
         _detach: function () {
           if (this._iceTimer) { clearTimeout(this._iceTimer); this._iceTimer = null; }
+          if (this._metaPoll) { clearInterval(this._metaPoll); this._metaPoll = null; }
           const video = this.video;
           if (video && video.srcObject) {
             video.srcObject = null;
@@ -739,8 +751,9 @@
     Quest: Enter VR, left thumbstick forward to teleport (desk or fire). Right-hand laser + trigger plays or pauses a screen, or enlarges the laptop. Point at the laptop and squeeze either grip, move it, then let go to leave it floating.
   </div>
   <button id="enter-vr" type="button">Enter VR</button>
-  <video id="laptopVideo" autoplay muted playsinline webkit-playsinline preload="none"
-         style="position:fixed;left:-9999px;width:4px;height:4px;opacity:0"></video>
+  <video id="laptopVideo" autoplay muted playsinline webkit-playsinline preload="auto"
+         width="1280" height="720"
+         style="position:fixed;left:-9999px;top:0;width:320px;height:180px"></video>
 
   <a-scene
     background="color: #000000"
