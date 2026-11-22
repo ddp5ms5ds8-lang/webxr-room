@@ -1,19 +1,29 @@
-# Quest WebXR video gallery (starter)
+# Quest WebXR video gallery
 
-A small A-Frame space you can open in the Meta Quest 3 Browser, then later hang Jellyfin streams on the screens.
+A small A-Frame space you can open in the Meta Quest 3 Browser, then later hang Jellyfin streams on the screens. The live build is at [https://ddp5ms5ds8-lang.github.io/webxr-room/](https://ddp5ms5ds8-lang.github.io/webxr-room/).
 
-The current `index.html` is an open night-time gallery in the style of the official [A-Frame Video](https://aframe.io/aframe/examples/test/video/) example: two large flat 16:9 planes, a simple floor and windowed pavilion, and an animated night sky. The previous cozy living-room version is saved as `index-livingroom.html`. Placeholder videos are Big Buck Bunny and Fireworks (from A-Frame's CORS-enabled CDN).
+The current `index.html` is a dark rock cliff in a pitch-black starfield. You stand at a glass desk near the edge, with two overhead screens on a monitor arm and a laptop you can grab and move. The previous animated aurora / Milky Way pavilion is saved as `index-aurora.html`. The earlier cozy living-room version is `index-livingroom.html`. Placeholder videos are Big Buck Bunny and Fireworks (from A-Frame's CORS-enabled CDN).
 
 ## What's in the room
 
 - One-file scene: `index.html`, CDN-loaded **A-Frame 1.8.0**, plus `aframe-extras` 7.7.0 and `aframe-blink-controls` 0.4.3.
-- Open pavilion with a dark floor, thin window frames, and a clear view of the sky. No bulky furniture, so the screens stay the focus.
-- Two large flat video screens (`<a-video>`, unlit/flat like the official example), slightly angled toward you. Labels sit on plaques *below* each bezel, not on the picture. Each screen is a future Jellyfin slot; click or use the laser to play or pause them separately.
-- Animated night sky (kept cheap for Quest 3, no post-processing): a dark star field, aurora ribbons that drift and shift through teal, violet, magenta, pink, blue and gold, and a Milky Way band that fades in at a random orientation, lingers, then fades out (about every 30–90 seconds). Add `?demo=1` to the URL to force the aurora and Milky Way on so you can preview them through the windows.
-- Desktop: drag to look, WASD to walk, **Enter VR** button.
-- Quest: **Enter VR**, left-thumbstick forward to teleport (and snap-turn), right-hand laser + trigger to play or pause a screen. A-Frame also shows its own VR button in the corner.
+- A low-poly dark rock plateau with a jagged front edge. Beyond the drop is an outer-space void: stars in every direction (including below), a denser star field ahead of the cliff, and a faint nebula glow. A low rock lip marks the edge, and teleport is limited to the plateau so you cannot step off.
+- A tidy frosted-glass desk with slim legs, right at the cliff edge. Labels on the front edge of the desk read `MAIN · Jellyfin later` and `SCREEN 2 · Jellyfin later`.
+- Two 16:9 video screens mounted on a slim dual-monitor arm above the desk, at about eye level and angled slightly inward. Click or use the right-hand laser + trigger to play or pause each one. These are the future Jellyfin slots.
+- A slim laptop on the desk (placeholder: "Laptop screen, mirroring coming soon"). This is the future target for laptop screen mirroring.
+- A small campfire about 9 m to the right of the desk, still on the plateau and away from the edge: a ring of stones, a couple of logs, a seat log, small flickering flames, and a short-range warm light. You can teleport to it.
+- Built to stay light on Quest 3: a static point star field (no aurora or Milky Way shaders), no large textures, no particle systems, `antialias` off, and video `preload="metadata"`.
 
-`starter-v2.png` is a desktop preview of this gallery with `?demo=1`. `starter.png` is the earlier living-room preview.
+## Grabbing the laptop
+
+On the Quest, point either hand's laser at the laptop and squeeze the **grip** button (the side squeeze, not the trigger). Move and rotate it freely; let go of the grip to leave it floating wherever you placed it. The pose is saved in `localStorage`, so it stays put if you reload the page. The trigger is still only for play/pause on the two video screens.
+
+## Controls recap
+
+| Where | Look | Move | Screens | Laptop |
+| --- | --- | --- | --- | --- |
+| Desktop | mouse drag | WASD (stays on the cliff) | click a screen | — |
+| Quest 3 | head tracking | left thumbstick forward = teleport (desk or fire, not off the edge) | right laser + trigger | laser + **grip** to grab, release to drop |
 
 ## Try it on a computer first
 
@@ -28,19 +38,15 @@ Then open `http://localhost:8080` in Chrome. Desktop preview does not need HTTPS
 
 ## Open it on the Quest 3
 
-WebXR in the Quest Browser only starts on an **HTTPS** page (plain `http://` from your PC's IP will not get an Enter VR session). Host this folder as static files — do not put a login in front of it — then open the HTTPS URL in the Quest Browser and tap **Enter VR**.
+WebXR in the Quest Browser only starts on an **HTTPS** page. This folder is already published on GitHub Pages:
 
-Realistic no-account or free-tier options:
+**[https://ddp5ms5ds8-lang.github.io/webxr-room/](https://ddp5ms5ds8-lang.github.io/webxr-room/)**
 
-- **Netlify Drop** — open [https://app.netlify.com/drop](https://app.netlify.com/drop), drag this folder, get an `https://…netlify.app` URL. Fastest one-shot preview.
-- **GitHub Pages** — put `index.html` in a repo (or `/docs`) and enable Pages. Good for a URL that stays up.
-- **Vercel** or **Cloudflare Pages** — same idea: upload or git-push the folder as a static site.
-
-This starter is not published from here on purpose. After you host it, bookmark the HTTPS URL in the Quest Browser.
+Open that URL in the Meta Quest Browser, tap **Enter VR**, and allow it if the headset asks. Bookmark the page so you do not have to type it again.
 
 You can also test on a PC with Quest Link / Air Link if you already use that, but the path above is the one that works on the headset by itself.
 
-## Later: putting Jellyfin on the wall screen
+## Later: putting Jellyfin on the wall screens
 
 Swap the `src` on `<video id="videoMain">` and/or `<video id="videoSecond">` for a Jellyfin media URL. That is not a drop-in change. Honest caveats:
 
@@ -50,14 +56,9 @@ Swap the `src` on `<video id="videoMain">` and/or `<video id="videoSecond">` for
 - **Same network vs remote.** On your home Wi-Fi, a local HTTPS reverse proxy to Jellyfin is the straightforward path. Off-network access needs your existing remote setup (HTTPS domain, VPN, or Jellyfin's remote access) plus the same CORS rules.
 - **Format.** Prefer a progressive MP4/H.264 URL the Quest Browser can decode. HLS can work but needs a player/loader, not a bare `<a-video>` tag.
 
-None of that is set up in this starter. The screen is wired so you can change the `src` once those pieces exist.
+None of that is set up in this starter. The screens are wired so you can change the `src` once those pieces exist.
 
-## Controls recap
-
-| Where | Look | Move | Screen |
-| --- | --- | --- | --- |
-| Desktop | mouse drag | WASD | click a screen |
-| Quest 3 | head tracking | left thumbstick forward = teleport | right laser + trigger on that screen |
+Laptop mirroring into the grabbable panel is a separate step. It is not built in yet.
 
 ## Examples to open on the Quest 3 Browser
 

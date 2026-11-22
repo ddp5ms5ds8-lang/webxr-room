@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>Quest Video Gallery — WebXR Starter</title>
+  <title>Quest Video Gallery — Cliff Studio</title>
   <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.7.0/dist/aframe-extras.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-blink-controls@0.4.3/dist/aframe-blink-controls.min.js"></script>
   <style>
-    html, body { margin: 0; height: 100%; background: #05060a; }
+    html, body { margin: 0; height: 100%; background: #000; }
     #enter-vr {
       position: fixed;
       left: 50%;
@@ -31,7 +31,7 @@
       left: 16px;
       top: 16px;
       z-index: 10;
-      max-width: 24rem;
+      max-width: 26rem;
       color: #dbe4f4;
       font: 13px/1.45 system-ui, sans-serif;
       background: rgba(8,10,16,0.78);
@@ -43,34 +43,7 @@
   </style>
   <script>
     (function () {
-      const DEMO = new URLSearchParams(window.location.search).get('demo') === '1';
       const THREE = AFRAME.THREE;
-
-      const NOISE_GLSL = `
-        float hash(vec2 p) {
-          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-        }
-        float noise(vec2 p) {
-          vec2 i = floor(p);
-          vec2 f = fract(p);
-          f = f * f * (3.0 - 2.0 * f);
-          float a = hash(i);
-          float b = hash(i + vec2(1.0, 0.0));
-          float c = hash(i + vec2(0.0, 1.0));
-          float d = hash(i + vec2(1.0, 1.0));
-          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-        }
-        float fbm(vec2 p) {
-          float v = 0.0;
-          float a = 0.5;
-          for (int i = 0; i < 4; i++) {
-            v += a * noise(p);
-            p *= 2.03;
-            a *= 0.5;
-          }
-          return v;
-        }
-      `;
 
       AFRAME.registerComponent('cinema-screen', {
         schema: { video: { type: 'selector' } },
@@ -96,279 +69,456 @@
         }
       });
 
-      AFRAME.registerComponent('night-sky', {
-        schema: {
-          demo: { type: 'boolean', default: false }
-        },
+      // Cheap static star field: Points with a circular sprite, no per-frame work.
+      // A sphere texture is avoided because poles stretch into a tunnel when you look up.
+      AFRAME.registerComponent('starfield', {
         init: function () {
-          this.demo = this.data.demo || DEMO;
-          this.time = 0;
-          this.auroraMats = [];
-          this._buildStars();
-          this._buildAurora();
-          this._buildMilkyWay();
-        },
-        _buildStars: function () {
-          const geo = new THREE.SphereGeometry(120, 32, 20);
-          const mat = new THREE.ShaderMaterial({
-            uniforms: { uTime: { value: 0 } },
-            vertexShader: `
-              precision mediump float;
-              varying vec3 vDir;
-              void main() {
-                vDir = normalize(position);
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          const THREE = AFRAME.THREE;
+          const root = this.el.object3D;
+
+          const dot = document.createElement('canvas');
+          dot.width = 32; dot.height = 32;
+          const dctx = dot.getContext('2d');
+          const dg = dctx.createRadialGradient(16, 16, 0, 16, 16, 14);
+          dg.addColorStop(0, 'rgba(255,255,255,1)');
+          dg.addColorStop(0.35, 'rgba(255,255,255,0.85)');
+          dg.addColorStop(1, 'rgba(255,255,255,0)');
+          dctx.fillStyle = dg;
+          dctx.fillRect(0, 0, 32, 32);
+          const dotTex = new THREE.CanvasTexture(dot);
+
+          function addPoints(count, place, size, opacity) {
+            const pos = new Float32Array(count * 3);
+            const col = new Float32Array(count * 3);
+            for (let i = 0; i < count; i++) {
+              const p = place(i);
+              pos[i * 3] = p[0]; pos[i * 3 + 1] = p[1]; pos[i * 3 + 2] = p[2];
+              const warm = Math.random();
+              if (warm < 0.12) {
+                col[i * 3] = 1.0; col[i * 3 + 1] = 0.88; col[i * 3 + 2] = 0.72;
+              } else if (warm < 0.22) {
+                col[i * 3] = 0.72; col[i * 3 + 1] = 0.84; col[i * 3 + 2] = 1.0;
+              } else {
+                const v = 0.88 + Math.random() * 0.12;
+                col[i * 3] = v; col[i * 3 + 1] = v; col[i * 3 + 2] = 1.0;
               }
-            `,
-            fragmentShader: `
-              precision mediump float;
-              varying vec3 vDir;
-              uniform float uTime;
-              float hash(vec3 p) {
-                return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
-              }
-              void main() {
-                vec3 d = normalize(vDir);
-                // Very dark base sky
-                vec3 col = mix(vec3(0.003, 0.005, 0.015), vec3(0.01, 0.014, 0.035), clamp(d.y * 0.6 + 0.2, 0.0, 1.0));
-
-                // Cheap procedural stars (a few scales, no textures)
-                vec3 grid = d * 180.0;
-                vec3 cell = floor(grid);
-                vec3 f = fract(grid) - 0.5;
-                float rnd = hash(cell);
-                float twinkle = 0.7 + 0.3 * sin(uTime * (1.2 + rnd * 2.0) + rnd * 12.0);
-                float star = smoothstep(0.07, 0.0, length(f)) * step(0.82, rnd) * twinkle;
-                float bright = smoothstep(0.94, 0.995, rnd);
-                col += star * mix(vec3(0.75, 0.82, 1.0), vec3(1.0, 0.95, 0.85), bright) * (0.9 + bright * 1.6);
-
-                // A sparser bigger-star pass
-                vec3 grid2 = d * 80.0;
-                vec3 cell2 = floor(grid2);
-                vec3 f2 = fract(grid2) - 0.5;
-                float rnd2 = hash(cell2 + 17.0);
-                float star2 = smoothstep(0.045, 0.0, length(f2)) * step(0.93, rnd2);
-                col += star2 * vec3(1.0, 0.98, 0.92) * 1.6;
-
-                gl_FragColor = vec4(col, 1.0);
-              }
-            `,
-            side: THREE.BackSide,
-            depthWrite: false
-          });
-          if ('toneMapped' in mat) mat.toneMapped = false;
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.frustumCulled = false;
-          mesh.renderOrder = -2;
-          this.el.object3D.add(mesh);
-          this.starMat = mat;
-        },
-        _buildAurora: function () {
-          const vertexShader = `
-            precision mediump float;
-            varying vec2 vUv;
-            varying vec3 vPos;
-            uniform float uTime;
-            uniform float uSpeed;
-            ${NOISE_GLSL}
-            void main() {
-              vUv = uv;
-              vec3 p = position;
-              float n = fbm(vec2(uv.x * 3.0 + uTime * uSpeed, uv.y * 1.4 + uTime * uSpeed * 0.35));
-              p += normal * (n - 0.5) * 1.8;
-              p.y += sin(uv.x * 6.28318 + uTime * uSpeed * 0.8) * 0.45;
-              vPos = p;
-              gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
             }
-          `;
-          const fragmentShader = `
-            precision mediump float;
-            varying vec2 vUv;
-            uniform float uTime;
-            uniform float uPhase;
-            uniform float uOpacity;
-            ${NOISE_GLSL}
-            vec3 palette(float t) {
-              vec3 c0 = vec3(0.15, 0.85, 0.72);
-              vec3 c1 = vec3(0.42, 0.28, 0.95);
-              vec3 c2 = vec3(0.95, 0.18, 0.68);
-              vec3 c3 = vec3(1.00, 0.48, 0.72);
-              vec3 c4 = vec3(0.25, 0.48, 1.00);
-              vec3 c5 = vec3(1.00, 0.78, 0.28);
-              float x = fract(t);
-              float s = x * 6.0;
-              if (s < 1.0) return mix(c0, c1, s);
-              if (s < 2.0) return mix(c1, c2, s - 1.0);
-              if (s < 3.0) return mix(c2, c3, s - 2.0);
-              if (s < 4.0) return mix(c3, c4, s - 3.0);
-              if (s < 5.0) return mix(c4, c5, s - 4.0);
-              return mix(c5, c0, s - 5.0);
-            }
-            void main() {
-              float t = uTime;
-              float n = fbm(vec2(vUv.x * 6.0 + t * 0.08, vUv.y * 0.9 - t * 0.03));
-              float n2 = fbm(vec2(vUv.x * 11.0 - t * 0.11, vUv.y * 1.2 + t * 0.04));
-              float curtain = smoothstep(0.04, 0.28, vUv.y) * smoothstep(1.0, 0.52, vUv.y);
-              float folds = smoothstep(0.22, 0.8, n) * (0.5 + 0.5 * n2);
-              float edge = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x);
-              float pulse = 0.7 + 0.3 * sin(t * 0.23 + uPhase * 6.28318);
-              float alpha = curtain * max(folds, 0.25) * edge * pulse * uOpacity;
-              if (alpha < 0.015) discard;
-              float colorT = uPhase + t * 0.035 + n * 0.4 + vUv.x * 0.7;
-              vec3 col = palette(colorT);
-              col += palette(colorT + 0.18) * n2 * 0.35;
-              gl_FragColor = vec4(col * (0.55 + 1.6 * alpha), alpha);
-            }
-          `;
-
-          const twoPi = Math.PI * 2;
-          const ribbons = [
-            { r: 24, y: 10.5, h: 14, start: 0.0, len: twoPi, phase: 0.00, speed: 0.22, opacity: 0.95, scaleY: 1.0 },
-            { r: 27, y: 12.5, h: 12, start: 0.4, len: twoPi, phase: 0.22, speed: 0.16, opacity: 0.8, scaleY: 1.08 },
-            { r: 22, y: 9.0, h: 13, start: 1.0, len: twoPi, phase: 0.48, speed: 0.28, opacity: 0.85, scaleY: 0.92 },
-            { r: 30, y: 14.0, h: 11, start: 2.0, len: twoPi, phase: 0.70, speed: 0.13, opacity: 0.7, scaleY: 1.12 }
-          ];
-
-          ribbons.forEach((spec) => {
-            const geo = new THREE.CylinderGeometry(
-              spec.r, spec.r, spec.h, 48, 12, true, spec.start, spec.len
-            );
-            const mat = new THREE.ShaderMaterial({
-              uniforms: {
-                uTime: { value: 0 },
-                uPhase: { value: spec.phase },
-                uSpeed: { value: spec.speed },
-                uOpacity: { value: this.demo ? spec.opacity : spec.opacity * 0.85 }
-              },
-              vertexShader: vertexShader,
-              fragmentShader: fragmentShader,
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+            const mat = new THREE.PointsMaterial({
+              map: dotTex,
+              size: size,
+              sizeAttenuation: true,
+              vertexColors: true,
               transparent: true,
-              blending: THREE.AdditiveBlending,
+              opacity: opacity,
               depthWrite: false,
-              side: THREE.DoubleSide
+              blending: THREE.AdditiveBlending
             });
             if ('toneMapped' in mat) mat.toneMapped = false;
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.y = spec.y;
-            mesh.scale.y = spec.scaleY;
-            mesh.frustumCulled = false;
-            mesh.renderOrder = 2;
-            this.el.object3D.add(mesh);
-            this.auroraMats.push(mat);
+            const pts = new THREE.Points(geo, mat);
+            pts.frustumCulled = false;
+            pts.renderOrder = -3;
+            root.add(pts);
+          }
+
+          function onSphere(rMin, rMax) {
+            const u = Math.random();
+            const v = Math.random();
+            const theta = 2 * Math.PI * u;
+            const phi = Math.acos(2 * v - 1);
+            const r = rMin + Math.random() * (rMax - rMin);
+            return [
+              r * Math.sin(phi) * Math.cos(theta),
+              r * Math.cos(phi),
+              r * Math.sin(phi) * Math.sin(theta)
+            ];
+          }
+
+          addPoints(2400, function () { return onSphere(60, 110); }, 1.7, 0.95);
+          addPoints(400, function () { return onSphere(60, 100); }, 2.8, 1.0);
+
+          // Denser mirage of stars in the drop ahead and below the cliff.
+          addPoints(800, function () {
+            return [
+              (Math.random() - 0.5) * 90,
+              -10 - Math.random() * 70,
+              -14 - Math.random() * 80
+            ];
+          }, 2.0, 0.9);
+
+          addPoints(35, function () {
+            return [
+              (Math.random() - 0.5) * 70,
+              -18 - Math.random() * 50,
+              -22 - Math.random() * 70
+            ];
+          }, 6.5, 0.45);
+
+          function nebulaSprite(color, w, h) {
+            const c = document.createElement('canvas');
+            c.width = 64; c.height = 64;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+            g.addColorStop(0, color);
+            g.addColorStop(0.5, color.replace(/[\d.]+\)$/, '0.16)'));
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 64, 64);
+            const mat = new THREE.SpriteMaterial({
+              map: new THREE.CanvasTexture(c),
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthWrite: false,
+              opacity: 0.4
+            });
+            if ('toneMapped' in mat) mat.toneMapped = false;
+            const s = new THREE.Sprite(mat);
+            s.scale.set(w, h, 1);
+            s.renderOrder = -2;
+            return s;
+          }
+          const n1 = nebulaSprite('rgba(70,45,130,0.55)', 32, 18);
+          n1.position.set(-8, -26, -42);
+          const n2 = nebulaSprite('rgba(30,55,120,0.5)', 26, 16);
+          n2.position.set(16, -34, -58);
+          const n3 = nebulaSprite('rgba(90,30,80,0.4)', 20, 13);
+          n3.position.set(2, -20, -34);
+          root.add(n1, n2, n3);
+        }
+      });
+
+      // Low-poly dark rock plateau with a jagged front edge that drops into space.
+      AFRAME.registerComponent('cliff-mesh', {
+        init: function () {
+          const shape = new THREE.Shape();
+          const pts = [
+            [-8.4, 8.2],
+            [10.2, 8.2],
+            [10.0, -3.7],
+            [8.2, -4.45],
+            [6.4, -3.9],
+            [4.4, -4.6],
+            [2.4, -4.0],
+            [0.6, -4.5],
+            [-1.2, -3.95],
+            [-3.2, -4.6],
+            [-5.2, -4.05],
+            [-6.8, -4.5],
+            [-8.2, -3.8]
+          ];
+          shape.moveTo(pts[0][0], pts[0][1]);
+          for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i][0], pts[i][1]);
+          shape.closePath();
+          const geo = new THREE.ExtrudeGeometry(shape, {
+            depth: 2.6,
+            bevelEnabled: true,
+            bevelThickness: 0.28,
+            bevelSize: 0.22,
+            bevelSegments: 1,
+            steps: 1
           });
-        },
-        _buildMilkyWay: function () {
-          // Wide shallow arc, used as a galactic band. The pivot is rotated to move it around the sky.
-          const geo = new THREE.CylinderGeometry(95, 95, 16, 48, 1, true, 0, Math.PI * 0.9);
-          const mat = new THREE.ShaderMaterial({
-            uniforms: {
-              uTime: { value: 0 },
-              uOpacity: { value: this.demo ? 0.55 : 0 }
-            },
-            vertexShader: `
-              precision mediump float;
-              varying vec3 vDir;
-              void main() {
-                vDir = normalize(position);
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-              }
-            `,
-            fragmentShader: `
-              precision mediump float;
-              varying vec3 vDir;
-              uniform float uTime;
-              uniform float uOpacity;
-              ${NOISE_GLSL}
-              void main() {
-                vec3 d = normalize(vDir);
-                vec2 p = vec2(atan(d.z, d.x) * 1.4, d.y * 6.0);
-                float dust = fbm(p * 3.2 + vec2(uTime * 0.01, 0.0));
-                float dust2 = fbm(p * 9.0 - vec2(uTime * 0.015, 0.2));
-                float band = pow(smoothstep(0.0, 0.65, 1.0 - abs(d.y) * 2.4), 1.4);
-                float clumps = smoothstep(0.35, 0.9, dust);
-                float alpha = band * (0.15 + 0.85 * clumps) * (0.4 + 0.6 * dust2) * uOpacity;
-                if (alpha < 0.02) discard;
-                vec3 col = mix(vec3(0.55, 0.65, 1.0), vec3(1.0, 0.93, 0.78), dust);
-                col += vec3(1.0, 0.95, 0.85) * dust2 * 0.45;
-                gl_FragColor = vec4(col * (0.4 + 1.2 * alpha), alpha);
-              }
-            `,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            side: THREE.BackSide
+          geo.rotateX(Math.PI / 2);
+          geo.computeBoundingBox();
+          geo.translate(0, -geo.boundingBox.max.y, 0);
+          geo.computeVertexNormals();
+
+          const pos = geo.attributes.position;
+          const colors = new Float32Array(pos.count * 3);
+          for (let i = 0; i < pos.count; i++) {
+            const y = pos.getY(i);
+            const n = (Math.sin(pos.getX(i) * 1.7 + pos.getZ(i) * 1.3) + 1) * 0.5;
+            const isTop = y > -0.08;
+            const shade = isTop ? 0.42 + n * 0.16 : 0.18 + n * 0.1;
+            colors[i * 3] = shade * 0.92;
+            colors[i * 3 + 1] = shade * 0.93;
+            colors[i * 3 + 2] = shade * 1.0;
+          }
+          geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+          const mat = new THREE.MeshStandardMaterial({
+            color: 0xc4c8d0,
+            roughness: 0.96,
+            metalness: 0.02,
+            vertexColors: true,
+            flatShading: true
           });
-          if ('toneMapped' in mat) mat.toneMapped = false;
           const mesh = new THREE.Mesh(geo, mat);
-          mesh.frustumCulled = false;
-          mesh.renderOrder = 1;
-          mesh.rotation.z = Math.PI * 0.5;
-          mesh.rotation.x = Math.PI * 0.12;
-          const pivot = new THREE.Group();
-          pivot.add(mesh);
-          this.el.object3D.add(pivot);
-          this.milkyMat = mat;
-          this.milkyMesh = mesh;
-          this.milkyPivot = pivot;
+          mesh.receiveShadow = false;
+          mesh.castShadow = false;
+          this.el.setObject3D('mesh', mesh);
 
-          // Demo: park a visible band across the upper sky behind the screens.
-          // Live: start hidden, then fade in at a random orientation later.
-          if (this.demo) {
-            pivot.rotation.set(-0.55, 0.15, 0.45);
-            this.mwState = 'visible';
-            this.mwTimer = 1e9;
-            this.mwFade = 1;
-          } else {
-            this._randomizeMilkyWay();
-            this.mwState = 'wait';
-            this.mwTimer = 8 + Math.random() * 12;
-            this.mwFade = 0;
-            mat.uniforms.uOpacity.value = 0;
+          // Low rock lip along the front edge so the drop is obvious.
+          const lipGeo = new THREE.BoxGeometry(0.55, 0.16, 0.28);
+          const lipMat = new THREE.MeshStandardMaterial({
+            color: 0x5a5e68,
+            roughness: 0.97,
+            metalness: 0,
+            flatShading: true
+          });
+          const lipX = [8.4, 6.5, 4.5, 2.5, 0.5, -1.4, -3.4, -5.4, -7.2];
+          const lipZ = [-4.05, -4.35, -3.95, -4.4, -4.15, -4.4, -4.0, -4.3, -3.9];
+          for (let i = 0; i < lipX.length; i++) {
+            const lip = new THREE.Mesh(lipGeo, lipMat);
+            lip.position.set(lipX[i], 0.06, lipZ[i]);
+            lip.rotation.y = (Math.random() - 0.5) * 0.8;
+            lip.scale.set(0.8 + Math.random() * 0.6, 0.7 + Math.random() * 0.6, 0.8 + Math.random() * 0.5);
+            mesh.add(lip);
           }
-        },
-        _randomizeMilkyWay: function () {
-          this.milkyPivot.rotation.set(
-            (Math.random() - 0.5) * 1.6,
-            Math.random() * Math.PI * 2,
-            (Math.random() - 0.5) * 1.4
-          );
-        },
-        tick: function (t, dt) {
-          const sec = t * 0.001;
-          const dts = Math.min((dt || 16) * 0.001, 0.05);
-          if (this.starMat) this.starMat.uniforms.uTime.value = sec;
-          for (let i = 0; i < this.auroraMats.length; i++) {
-            this.auroraMats[i].uniforms.uTime.value = sec;
-          }
-          if (this.milkyMat) this.milkyMat.uniforms.uTime.value = sec;
-          if (this.demo || !this.milkyMat) return;
+        }
+      });
 
-          this.mwTimer -= dts;
-          const fadeDur = 5;
-          if (this.mwState === 'wait' && this.mwTimer <= 0) {
-            this._randomizeMilkyWay();
-            this.mwState = 'in';
-            this.mwTimer = fadeDur;
-            this.mwFade = 0;
-          } else if (this.mwState === 'in') {
-            this.mwFade = 1 - Math.max(this.mwTimer, 0) / fadeDur;
-            if (this.mwTimer <= 0) {
-              this.mwState = 'hold';
-              this.mwTimer = 14 + Math.random() * 16;
-              this.mwFade = 1;
-            }
-          } else if (this.mwState === 'hold' && this.mwTimer <= 0) {
-            this.mwState = 'out';
-            this.mwTimer = fadeDur;
-          } else if (this.mwState === 'out') {
-            this.mwFade = Math.max(this.mwTimer, 0) / fadeDur;
-            if (this.mwTimer <= 0) {
-              this.mwState = 'wait';
-              this.mwTimer = 30 + Math.random() * 60;
-              this.mwFade = 0;
+      AFRAME.registerComponent('stay-on-cliff', {
+        schema: {
+          minX: { default: -7.2 },
+          maxX: { default: 9.2 },
+          minZ: { default: -3.35 },
+          maxZ: { default: 7.2 }
+        },
+        tick: function () {
+          const p = this.el.object3D.position;
+          if (p.x < this.data.minX) p.x = this.data.minX;
+          else if (p.x > this.data.maxX) p.x = this.data.maxX;
+          if (p.z < this.data.minZ) p.z = this.data.minZ;
+          else if (p.z > this.data.maxZ) p.z = this.data.maxZ;
+          p.y = 0;
+        }
+      });
+
+      // Grip to pick up, release to leave floating. Works with either hand.
+      AFRAME.registerComponent('grip-move', {
+        schema: {
+          persistKey: { type: 'string', default: '' }
+        },
+        init: function () {
+          this.hand = null;
+          this._onDown = this._onDown.bind(this);
+          this._onUp = this._onUp.bind(this);
+          const scene = this.el.sceneEl;
+          const bind = function () {
+            ['#leftHand', '#rightHand'].forEach((sel) => {
+              const hand = scene.querySelector(sel);
+              if (!hand) return;
+              hand.addEventListener('gripdown', this._onDown);
+              hand.addEventListener('gripup', this._onUp);
+            });
+          }.bind(this);
+          if (scene.hasLoaded) bind();
+          else scene.addEventListener('loaded', bind);
+          if (this.data.persistKey) this._restore();
+        },
+        remove: function () {
+          const scene = this.el.sceneEl;
+          ['#leftHand', '#rightHand'].forEach((sel) => {
+            const hand = scene && scene.querySelector(sel);
+            if (!hand) return;
+            hand.removeEventListener('gripdown', this._onDown);
+            hand.removeEventListener('gripup', this._onUp);
+          });
+        },
+        _hits: function (hand) {
+          const ray = hand.components.raycaster;
+          if (ray) {
+            const els = ray.intersectedEls || [];
+            for (let i = 0; i < els.length; i++) {
+              let n = els[i];
+              while (n) {
+                if (n === this.el) return true;
+                n = n.parentEl;
+              }
             }
           }
-          this.milkyMat.uniforms.uOpacity.value = this.mwFade * 0.8;
+          const hp = new THREE.Vector3();
+          const op = new THREE.Vector3();
+          hand.object3D.getWorldPosition(hp);
+          this.el.object3D.getWorldPosition(op);
+          return hp.distanceTo(op) < 0.5;
+        },
+        _onDown: function (evt) {
+          if (this.hand) return;
+          const hand = evt.target;
+          if (!this._hits(hand)) return;
+          this.hand = hand;
+          hand.object3D.attach(this.el.object3D);
+        },
+        _onUp: function (evt) {
+          if (this.hand !== evt.target) return;
+          this.el.sceneEl.object3D.attach(this.el.object3D);
+          this.hand = null;
+          this._syncAttr();
+          if (this.data.persistKey) this._save();
+        },
+        _syncAttr: function () {
+          const o = this.el.object3D;
+          this.el.setAttribute('position', { x: o.position.x, y: o.position.y, z: o.position.z });
+          this.el.setAttribute('rotation', {
+            x: THREE.MathUtils.radToDeg(o.rotation.x),
+            y: THREE.MathUtils.radToDeg(o.rotation.y),
+            z: THREE.MathUtils.radToDeg(o.rotation.z)
+          });
+        },
+        _save: function () {
+          const o = this.el.object3D;
+          try {
+            localStorage.setItem(this.data.persistKey, JSON.stringify({
+              position: { x: o.position.x, y: o.position.y, z: o.position.z },
+              rotation: {
+                x: THREE.MathUtils.radToDeg(o.rotation.x),
+                y: THREE.MathUtils.radToDeg(o.rotation.y),
+                z: THREE.MathUtils.radToDeg(o.rotation.z)
+              }
+            }));
+          } catch (e) {}
+        },
+        _restore: function () {
+          try {
+            const raw = localStorage.getItem(this.data.persistKey);
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            if (data.position) this.el.setAttribute('position', data.position);
+            if (data.rotation) this.el.setAttribute('rotation', data.rotation);
+          } catch (e) {}
+        }
+      });
+
+      AFRAME.registerComponent('laptop-canvas', {
+        init: function () {
+          const c = document.createElement('canvas');
+          c.width = 1024;
+          c.height = 640;
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#07080d';
+          ctx.fillRect(0, 0, 1024, 640);
+          ctx.fillStyle = '#10131b';
+          ctx.fillRect(40, 40, 944, 560);
+          ctx.fillStyle = '#2a3348';
+          ctx.fillRect(40, 40, 944, 4);
+          ctx.font = '600 56px system-ui, sans-serif';
+          ctx.fillStyle = '#e8eefc';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('Laptop screen', 512, 292);
+          ctx.font = '400 30px system-ui, sans-serif';
+          ctx.fillStyle = '#8b95ad';
+          ctx.fillText('mirroring coming soon', 512, 360);
+          this.el.setAttribute('material', { shader: 'flat', src: c, npot: true });
+        }
+      });
+
+      // Cosy, cheap campfire: stones, logs, a few additive flame billboards, one short light.
+      AFRAME.registerComponent('campfire', {
+        init: function () {
+          const root = this.el.object3D;
+          const stoneMat = new THREE.MeshStandardMaterial({
+            color: 0x2a2c32, roughness: 0.98, metalness: 0, flatShading: true
+          });
+          const stoneGeo = new THREE.DodecahedronGeometry(0.14, 0);
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2 + 0.1;
+            const s = 0.7 + (i % 3) * 0.18;
+            const m = new THREE.Mesh(stoneGeo, stoneMat);
+            m.position.set(Math.cos(a) * 0.48, 0.07, Math.sin(a) * 0.48);
+            m.scale.set(s, 0.55 + (i % 2) * 0.25, s * 0.9);
+            m.rotation.set(Math.random(), a, Math.random() * 0.5);
+            root.add(m);
+          }
+
+          const logMat = new THREE.MeshStandardMaterial({
+            color: 0x3a2416, roughness: 0.95, metalness: 0, flatShading: true
+          });
+          const logGeo = new THREE.CylinderGeometry(0.055, 0.07, 0.7, 6);
+          const log1 = new THREE.Mesh(logGeo, logMat);
+          log1.rotation.z = Math.PI / 2;
+          log1.rotation.y = 0.4;
+          log1.position.set(0.02, 0.07, 0.02);
+          const log2 = new THREE.Mesh(logGeo, logMat);
+          log2.rotation.z = Math.PI / 2;
+          log2.rotation.y = -0.7;
+          log2.position.set(-0.04, 0.09, -0.02);
+          root.add(log1, log2);
+
+          // Seat log, just outside the ring, facing the fire.
+          const seatGeo = new THREE.CylinderGeometry(0.09, 0.1, 0.85, 6);
+          const seat = new THREE.Mesh(seatGeo, logMat);
+          seat.rotation.z = Math.PI / 2;
+          seat.position.set(-0.95, 0.1, 0.15);
+          root.add(seat);
+
+          const flameTex = (function () {
+            const c = document.createElement('canvas');
+            c.width = 32; c.height = 64;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(16, 48, 2, 16, 24, 22);
+            g.addColorStop(0, 'rgba(255,240,180,0.95)');
+            g.addColorStop(0.35, 'rgba(255,140,40,0.7)');
+            g.addColorStop(0.7, 'rgba(220,50,10,0.3)');
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 32, 64);
+            return new THREE.CanvasTexture(c);
+          })();
+
+          this.flames = [];
+          const specs = [
+            { x: 0, y: 0.42, z: 0, sx: 0.38, sy: 0.7 },
+            { x: 0.06, y: 0.34, z: 0.04, sx: 0.28, sy: 0.5 },
+            { x: -0.05, y: 0.32, z: -0.03, sx: 0.24, sy: 0.46 }
+          ];
+          specs.forEach((sp) => {
+            const mat = new THREE.SpriteMaterial({
+              map: flameTex,
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthWrite: false,
+              opacity: 0.85
+            });
+            if ('toneMapped' in mat) mat.toneMapped = false;
+            const s = new THREE.Sprite(mat);
+            s.position.set(sp.x, sp.y, sp.z);
+            s.scale.set(sp.sx, sp.sy, 1);
+            s.userData.base = sp;
+            root.add(s);
+            this.flames.push(s);
+          });
+
+          const light = new THREE.PointLight(0xff6a2a, 0.75, 4.2, 2);
+          light.position.set(0, 0.45, 0);
+          root.add(light);
+          this.light = light;
+
+          // Soft warm decal on the ground, cheap glow without a second light.
+          const decalC = document.createElement('canvas');
+          decalC.width = 64; decalC.height = 64;
+          const dctx = decalC.getContext('2d');
+          const dg = dctx.createRadialGradient(32, 32, 4, 32, 32, 30);
+          dg.addColorStop(0, 'rgba(255,120,40,0.45)');
+          dg.addColorStop(0.55, 'rgba(180,50,10,0.12)');
+          dg.addColorStop(1, 'rgba(0,0,0,0)');
+          dctx.fillStyle = dg;
+          dctx.fillRect(0, 0, 64, 64);
+          const decalMat = new THREE.MeshBasicMaterial({
+            map: new THREE.CanvasTexture(decalC),
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+          });
+          if ('toneMapped' in decalMat) decalMat.toneMapped = false;
+          const decal = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), decalMat);
+          decal.rotation.x = -Math.PI / 2;
+          decal.position.y = 0.02;
+          root.add(decal);
+        },
+        tick: function (t) {
+          const a = t * 0.001;
+          for (let i = 0; i < this.flames.length; i++) {
+            const f = this.flames[i];
+            const b = f.userData.base;
+            const flick = 0.88 + 0.12 * Math.sin(a * (7 + i * 3.1) + i) + 0.06 * Math.sin(a * (13 + i * 2));
+            f.scale.set(b.sx * (0.9 + 0.15 * Math.sin(a * 5 + i)), b.sy * flick, 1);
+            f.material.opacity = 0.7 + 0.25 * Math.sin(a * (8 + i * 2.4) + i * 1.3);
+          }
+          if (this.light) this.light.intensity = 0.7 + 0.22 * Math.sin(a * 9) + 0.1 * Math.sin(a * 17);
         }
       });
     })();
@@ -376,113 +526,134 @@
 </head>
 <body>
   <div id="hint">
-    <strong>WebXR video gallery</strong><br>
-    Two large flat screens, in the style of the official A-Frame Video example, with a night sky beyond the windows. Click a screen to play or pause.<br>
+    <strong>Cliff studio</strong><br>
+    Two overhead screens above a glass desk, with a starfield drop beyond the edge. A laptop on the desk can be grabbed and moved.<br>
     Desktop: drag to look, WASD to walk.<br>
-    Quest: Enter VR, left thumbstick forward to teleport, right-hand laser to play or pause each screen.
+    Quest: Enter VR, left thumbstick forward to teleport (desk or fire). Right-hand laser + trigger plays or pauses a screen. Point at the laptop and squeeze either grip, move it, then let go to leave it floating.
   </div>
   <button id="enter-vr" type="button">Enter VR</button>
 
   <a-scene
-    background="color: #05060a"
-    renderer="antialias: true; colorManagement: true"
+    background="color: #000000"
+    renderer="antialias: false; colorManagement: true"
     vr-mode-ui="enabled: true">
 
     <a-assets>
       <!-- Big Buck Bunny, Blender Institute / peach.blender.org — A-Frame CORS CDN -->
       <video id="videoMain"
              src="https://cdn.aframe.io/videos/bunny.mp4"
-             preload="auto" loop playsinline webkit-playsinline muted
+             preload="metadata" loop playsinline webkit-playsinline muted
              crossorigin="anonymous"></video>
       <!-- Fireworks, Motion Digital — same official A-Frame Video example source -->
       <video id="videoSecond"
              src="https://cdn.aframe.io/videos/fireworks.mp4"
-             preload="auto" loop playsinline webkit-playsinline muted
+             preload="metadata" loop playsinline webkit-playsinline muted
              crossorigin="anonymous"></video>
     </a-assets>
 
-    <a-entity night-sky></a-entity>
+    <a-entity id="sky" starfield></a-entity>
 
-    <!-- Soft night lighting; video planes stay unlit/flat so they stay bright -->
-    <a-entity light="type: ambient; color: #9aa6c4; intensity: 0.22"></a-entity>
-    <a-entity light="type: hemisphere; color: #6b7cb0; groundColor: #141018; intensity: 0.28"></a-entity>
-    <a-entity light="type: directional; color: #c9d6ff; intensity: 0.18" position="4 12 2"></a-entity>
-    <a-entity light="type: point; color: #8eb0ff; intensity: 0.35; distance: 14; decay: 2" position="0 3.2 1"></a-entity>
+    <a-entity light="type: ambient; color: #8a94a8; intensity: 0.16"></a-entity>
+    <a-entity light="type: hemisphere; color: #2a3348; groundColor: #08080c; intensity: 0.18"></a-entity>
+    <a-entity light="type: directional; color: #c5cde0; intensity: 0.28" position="-2 10 6"></a-entity>
 
-    <!-- Open floor -->
+    <a-entity id="cliff" cliff-mesh></a-entity>
+    <!-- Inset walkable top: stops short of the drop, covers the desk and the fire. -->
     <a-plane id="floor" class="teleport"
-             rotation="-90 0 0" width="24" height="20" position="0 0 0"
-             color="#2a2e3c"
-             material="roughness: 0.92; metalness: 0"></a-plane>
-    <a-plane rotation="-90 0 0" width="10" height="9" position="0 0.01 0"
-             color="#353a4c"
-             material="roughness: 0.9; metalness: 0"></a-plane>
+             rotation="-90 0 0" width="16.4" height="10.4" position="0.9 0.02 1.85"
+             visible="false"></a-plane>
 
-    <!-- Open pavilion: thin window frames so the sky reads through the openings -->
-    <a-entity id="pavilion">
-      <!-- Back window wall (behind the screens) -->
-      <a-box position="-7.2 3.6 -10.2" width="0.16" height="7.2" depth="0.16" color="#d8dbe6"></a-box>
-      <a-box position="0 3.6 -10.2" width="0.12" height="7.2" depth="0.12" color="#d8dbe6"></a-box>
-      <a-box position="7.2 3.6 -10.2" width="0.16" height="7.2" depth="0.16" color="#d8dbe6"></a-box>
-      <a-box position="0 7.2 -10.2" width="14.6" height="0.14" depth="0.2" color="#e4e7f0"></a-box>
-      <a-box position="0 0.08 -10.2" width="14.6" height="0.16" depth="0.22" color="#c9cdd8"></a-box>
-      <a-box position="-3.6 3.6 -10.2" width="0.08" height="7.2" depth="0.08" color="#c5cad6"></a-box>
-      <a-box position="3.6 3.6 -10.2" width="0.08" height="7.2" depth="0.08" color="#c5cad6"></a-box>
-      <a-box position="0 3.6 -10.2" width="14.6" height="0.08" depth="0.08" color="#c5cad6"></a-box>
-
-      <!-- Side posts and a thin roof edge; ceiling is open to the sky -->
-      <a-box position="-7.2 3.6 4.5" width="0.16" height="7.2" depth="0.16" color="#d8dbe6"></a-box>
-      <a-box position="7.2 3.6 4.5" width="0.16" height="7.2" depth="0.16" color="#d8dbe6"></a-box>
-      <a-box position="-7.2 7.2 -2.85" width="0.18" height="0.12" depth="14.9" color="#e4e7f0"></a-box>
-      <a-box position="7.2 7.2 -2.85" width="0.18" height="0.12" depth="14.9" color="#e4e7f0"></a-box>
-      <a-box position="0 7.2 4.5" width="14.6" height="0.12" depth="0.18" color="#e4e7f0"></a-box>
-
-      <a-box position="-7.2 0.08 -2.85" width="0.3" height="0.16" depth="14.9" color="#c9cdd8"></a-box>
-      <a-box position="7.2 0.08 -2.85" width="0.3" height="0.16" depth="14.9" color="#c9cdd8"></a-box>
+    <!-- Glass desk near the cliff edge, facing the player. -->
+    <a-entity id="desk" position="0 0 -3.15">
+      <a-box position="0 0.74 0" width="2.55" height="0.03" depth="0.88"
+             material="shader: standard; color: #dce6f2; transparent: true; opacity: 0.22; roughness: 0.5; metalness: 0.15; emissive: #8aa0b8; emissiveIntensity: 0.08; side: double"></a-box>
+      <a-box position="0 0.726 0.445" width="2.58" height="0.02" depth="0.02"
+             material="color: #2a2e36; metalness: 0.65; roughness: 0.4"></a-box>
+      <a-box position="0 0.726 -0.445" width="2.58" height="0.02" depth="0.02"
+             material="color: #2a2e36; metalness: 0.65; roughness: 0.4"></a-box>
+      <a-box position="-1.28 0.726 0" width="0.02" height="0.02" depth="0.89"
+             material="color: #2a2e36; metalness: 0.65; roughness: 0.4"></a-box>
+      <a-box position="1.28 0.726 0" width="0.02" height="0.02" depth="0.89"
+             material="color: #2a2e36; metalness: 0.65; roughness: 0.4"></a-box>
+      <a-box position="-1.18 0.36 -0.36" width="0.026" height="0.72" depth="0.026"
+             material="color: #14161b; metalness: 0.7; roughness: 0.35"></a-box>
+      <a-box position="1.18 0.36 -0.36" width="0.026" height="0.72" depth="0.026"
+             material="color: #14161b; metalness: 0.7; roughness: 0.35"></a-box>
+      <a-box position="-1.18 0.36 0.36" width="0.026" height="0.72" depth="0.026"
+             material="color: #14161b; metalness: 0.7; roughness: 0.35"></a-box>
+      <a-box position="1.18 0.36 0.36" width="0.026" height="0.72" depth="0.026"
+             material="color: #14161b; metalness: 0.7; roughness: 0.35"></a-box>
+      <a-text value="MAIN  ·  Jellyfin later"
+              align="center" width="2.1" color="#c5cde0"
+              position="-0.85 0.755 0.42" rotation="-78 0 0"
+              font="kelsonsans"></a-text>
+      <a-text value="SCREEN 2  ·  Jellyfin later"
+              align="center" width="2.1" color="#c5cde0"
+              position="0.85 0.755 0.42" rotation="-78 0 0"
+              font="kelsonsans"></a-text>
     </a-entity>
 
-    <!-- Main screen: large flat 16:9 plane, slightly turned like the official example -->
-    <a-entity id="screen-main" position="-1.35 2.15 -7.4" rotation="0 22 0">
-      <a-box position="0 0 -0.04" width="5.55" height="3.22" depth="0.06" color="#0b0d12"></a-box>
+    <!-- Dual-monitor arm: screens at slightly-above eye level, angled in. -->
+    <a-entity id="monitor-arm" position="0 0 -3.15">
+      <a-box position="0 0.775 -0.38" width="0.14" height="0.03" depth="0.1"
+             material="color: #3a3e48; metalness: 0.7; roughness: 0.35"></a-box>
+      <a-box position="0 1.28 -0.40" width="0.028" height="0.98" depth="0.028"
+             material="color: #3a3e48; metalness: 0.7; roughness: 0.35"></a-box>
+      <a-box position="0 1.76 -0.40" width="1.2" height="0.022" depth="0.022"
+             material="color: #3a3e48; metalness: 0.7; roughness: 0.35"></a-box>
+      <a-box position="-0.62 1.76 -0.36" width="0.018" height="0.018" depth="0.12"
+             material="color: #3a3e48; metalness: 0.7; roughness: 0.35"></a-box>
+      <a-box position="0.62 1.76 -0.36" width="0.018" height="0.018" depth="0.12"
+             material="color: #3a3e48; metalness: 0.7; roughness: 0.35"></a-box>
+    </a-entity>
+
+    <a-entity id="screen-main" position="-0.72 1.78 -3.48" rotation="0 16 0">
+      <a-box position="0 0 -0.03" width="1.28" height="0.74" depth="0.04" color="#0b0d12"></a-box>
       <a-video class="clickable"
                src="#videoMain"
-               width="5.33" height="3.0"
+               width="1.22" height="0.686"
                material="shader: flat"
                cinema-screen="video: #videoMain"></a-video>
-      <a-box position="0 -1.78 0" width="2.6" height="0.22" depth="0.04" color="#12141c"></a-box>
-      <a-text value="MAIN  ·  Jellyfin later"
-              align="center" width="3.8" color="#eef2ff"
-              position="0 -1.78 0.03"
-              font="kelsonsans"></a-text>
     </a-entity>
 
-    <!-- Second screen, angled toward the viewer, same official-example layout language -->
-    <a-entity id="screen-second" position="4.35 1.85 -5.6" rotation="0 -34 0">
-      <a-box position="0 0 -0.04" width="4.0" height="2.34" depth="0.06" color="#0b0d12"></a-box>
+    <a-entity id="screen-second" position="0.72 1.78 -3.48" rotation="0 -16 0">
+      <a-box position="0 0 -0.03" width="1.28" height="0.74" depth="0.04" color="#0b0d12"></a-box>
       <a-video class="clickable"
                src="#videoSecond"
-               width="3.82" height="2.15"
+               width="1.22" height="0.686"
                material="shader: flat"
                cinema-screen="video: #videoSecond"></a-video>
-      <a-box position="0 -1.32 0" width="2.3" height="0.22" depth="0.04" color="#12141c"></a-box>
-      <a-text value="SCREEN 2  ·  Jellyfin later"
-              align="center" width="3.2" color="#eef2ff"
-              position="0 -1.32 0.03"
-              font="kelsonsans"></a-text>
     </a-entity>
 
-    <!-- Player rig: keyboard walk on desktop, Quest teleport + lasers -->
-    <a-entity id="rig" movement-controls="controls: keyboard; speed: 0.2" position="0 0 3.8">
+    <!-- Slim open laptop on the desk. Grip to grab and move; future mirror target. -->
+    <a-entity id="laptop" class="grabbable"
+              position="0 0.755 -2.96"
+              grip-move="persistKey: webxr-laptop-pose">
+      <a-box class="grabbable" position="0 0.006 0.12" width="0.42" height="0.012" depth="0.26"
+             color="#16181d"></a-box>
+      <a-entity position="0 0.012 -0.02" rotation="-16 0 0">
+        <a-box class="grabbable" position="0 0.13 -0.006" width="0.42" height="0.26" depth="0.01"
+               color="#121318"></a-box>
+        <a-plane class="grabbable" position="0 0.13 0.0008" width="0.39" height="0.23"
+                 laptop-canvas></a-plane>
+      </a-entity>
+    </a-entity>
+
+    <!-- Small fire, about 9 m to the right of the desk, away from the edge. -->
+    <a-entity id="campfire" position="7 0.04 2.5" campfire></a-entity>
+
+    <a-entity id="rig" movement-controls="controls: keyboard; speed: 0.2" position="0 0 -0.5"
+              stay-on-cliff>
       <a-entity id="head" camera look-controls position="0 1.6 0"></a-entity>
       <a-entity
         id="leftHand"
         laser-controls="hand: left"
-        raycaster="objects: .clickable; far: 20; lineColor: #9ec0ff; lineOpacity: 0.6"
+        raycaster="objects: .clickable, .grabbable; far: 20; lineColor: #9ec0ff; lineOpacity: 0.6"
         blink-controls="cameraRig: #rig; teleportOrigin: #head; collisionEntities: .teleport; rotateOnTeleport: true; snapTurn: true"></a-entity>
       <a-entity
         id="rightHand"
         laser-controls="hand: right"
-        raycaster="objects: .clickable; far: 20; lineColor: #9ec0ff; lineOpacity: 0.6"></a-entity>
+        raycaster="objects: .clickable, .grabbable; far: 20; lineColor: #9ec0ff; lineOpacity: 0.6"></a-entity>
     </a-entity>
   </a-scene>
 
